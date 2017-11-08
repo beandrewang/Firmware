@@ -185,7 +185,7 @@ PARAM_DEFINE_FLOAT(COM_RC_LOSS_T, 0.5f);
  * override request by the pilot.
  *
  * @group Commander
- # @unit %
+ * @unit %
  * @min 5
  * @max 40
  * @decimal 0
@@ -220,18 +220,6 @@ PARAM_DEFINE_FLOAT(COM_HOME_H_T, 5.0f);
  * @increment 0.5
  */
 PARAM_DEFINE_FLOAT(COM_HOME_V_T, 10.0f);
-
-/**
- * Autosaving of params
- *
- * If not equal to zero the commander will automatically save parameters to persistent storage once changed.
- * Default is on, as the interoperability with currently deployed GCS solutions depends on parameters
- * being sticky. Developers can default it to off.
- *
- * @group Commander
- * @boolean
- */
-PARAM_DEFINE_INT32(COM_AUTOS_PAR, 1);
 
 /**
  * RC control input mode
@@ -287,10 +275,7 @@ PARAM_DEFINE_INT32(COM_DISARM_LAND, 0);
  * The default allows to arm the vehicle without GPS signal.
  *
  * @group Commander
- * @min 0
- * @max 1
- * @value 0 Don't allow arming without GPS
- * @value 1 Allow arming without GPS
+ * @boolean
  */
 PARAM_DEFINE_INT32(COM_ARM_WO_GPS, 1);
 
@@ -360,7 +345,7 @@ PARAM_DEFINE_INT32(COM_OBL_ACT, 0);
  * @value 2 Manual
  * @value 3 Return to Land
  * @value 4 Land at current position
- *
+ * @value 5 Loiter
  * @group Mission
  */
 PARAM_DEFINE_INT32(COM_OBL_RC_ACT, 0);
@@ -385,6 +370,7 @@ PARAM_DEFINE_INT32(COM_OBL_RC_ACT, 0);
  * @value 8 Stabilized
  * @value 9 Rattitude
  * @value 12 Follow Me
+ * @group Commander
  */
 PARAM_DEFINE_INT32(COM_FLTMODE1, -1);
 
@@ -408,6 +394,7 @@ PARAM_DEFINE_INT32(COM_FLTMODE1, -1);
  * @value 8 Stabilized
  * @value 9 Rattitude
  * @value 12 Follow Me
+ * @group Commander
  */
 PARAM_DEFINE_INT32(COM_FLTMODE2, -1);
 
@@ -431,6 +418,7 @@ PARAM_DEFINE_INT32(COM_FLTMODE2, -1);
  * @value 8 Stabilized
  * @value 9 Rattitude
  * @value 12 Follow Me
+ * @group Commander
  */
 PARAM_DEFINE_INT32(COM_FLTMODE3, -1);
 
@@ -454,6 +442,7 @@ PARAM_DEFINE_INT32(COM_FLTMODE3, -1);
  * @value 8 Stabilized
  * @value 9 Rattitude
  * @value 12 Follow Me
+ * @group Commander
  */
 PARAM_DEFINE_INT32(COM_FLTMODE4, -1);
 
@@ -477,6 +466,7 @@ PARAM_DEFINE_INT32(COM_FLTMODE4, -1);
  * @value 8 Stabilized
  * @value 9 Rattitude
  * @value 12 Follow Me
+ * @group Commander
  */
 PARAM_DEFINE_INT32(COM_FLTMODE5, -1);
 
@@ -500,6 +490,7 @@ PARAM_DEFINE_INT32(COM_FLTMODE5, -1);
  * @value 8 Stabilized
  * @value 9 Rattitude
  * @value 12 Follow Me
+ * @group Commander
  */
 PARAM_DEFINE_INT32(COM_FLTMODE6, -1);
 
@@ -593,8 +584,118 @@ PARAM_DEFINE_FLOAT(COM_ARM_IMU_ACC, 0.7f);
  * @group Commander
  * @unit rad/s
  * @min 0.02
- * @max 0.2
+ * @max 0.3
  * @decimal 3
  * @increment 0.01
  */
-PARAM_DEFINE_FLOAT(COM_ARM_IMU_GYR, 0.15f);
+PARAM_DEFINE_FLOAT(COM_ARM_IMU_GYR, 0.25f);
+
+/**
+ * Maximum magnetic field inconsistency between units that will allow arming
+ *
+ * @group Commander
+ * @unit Gauss
+ * @min 0.05
+ * @max 0.5
+ * @decimal 2
+ * @increment 0.05
+ */
+PARAM_DEFINE_FLOAT(COM_ARM_MAG, 0.15f);
+
+/**
+ * Enable RC stick override of auto modes
+ *
+ * @boolean
+ * @group Commander
+ */
+PARAM_DEFINE_INT32(COM_RC_OVERRIDE, 0);
+
+/**
+ * Require valid mission to arm
+ *
+ * The default allows to arm the vehicle without a valid mission.
+ *
+ * @group Commander
+ * @boolean
+ */
+PARAM_DEFINE_INT32(COM_ARM_MIS_REQ, 0);
+
+/**
+ * Position control navigation loss response.
+ *
+ * This sets the flight mode that will be used if navigation accuracy is no longer adequte for position control.
+ * Navigation accuracy checks can be disabled using the CBRK_VELPOSERR parameter, but doing so will remove protection for all flight modes.
+ *
+ * @value 0 Assume use of remote control after fallback. Switch to ALTCTL if a height estimate is available, else switch to MANUAL.
+ * @value 1 Assume no use of remote control after fallback. Switch to DESCEND if a height estimate is available, else switch to TERMINATION.
+ *
+ * @group Mission
+ */
+PARAM_DEFINE_INT32(COM_POSCTL_NAVL, 0);
+
+/**
+ * Arm authorization parameters, this uint32_t will be splitted between starting from the LSB:
+ * - 8bits to authorizer system id
+ * - 16bits to authentication method parameter, this will be used to store a timeout for the first 2 methods but can be used to another parameter for other new authentication methods.
+ * - 7bits to authentication method
+ * 		- one arm = 0
+ * 		- two step arm = 1
+ * * the MSB bit is not used to avoid problems in the conversion between int and uint
+ *
+ * Default value: (10 << 0 | 1000 << 8 | 0 << 24) = 256010
+ * - authorizer system id = 10
+ * - authentication method parameter = 10000msec of timeout
+ * - authentication method = during arm
+ * @group Commander
+ */
+PARAM_DEFINE_INT32(COM_ARM_AUTH, 256010);
+
+/**
+ * Loss of position failsafe activation delay.
+ *
+ * This sets number of seconds that the position checks need to be failed before the failsafe will activate.
+ * The default value has been optimised for rotary wing applications. For fixed wing applications, a larger value between 5 and 10 should be used.
+ *
+ * @unit sec
+ * @reboot_required true
+ * @group Commander
+ */
+PARAM_DEFINE_INT32(COM_POS_FS_DELAY, 1);
+
+/**
+ * Loss of position probation delay at takeoff.
+ *
+ * The probation delay is the number of seconds that the EKF innovation checks need to pass for the position to be declared good after it has been declared bad.
+ * The probation delay will be reset to this parameter value when takeoff is detected.
+ * After takeoff, if position checks are passing, the probation delay will reduce by one second for every lapsed second of valid position down to a minimum of 1 second.
+ * If position checks are failing, the probation delay will increase by COM_POS_FS_GAIN seconds for every lapsed second up to a maximum of 100 seconds.
+ * The default value has been optimised for rotary wing applications. For fixed wing applications, a value of 1 should be used.
+ *
+ * @unit sec
+ * @reboot_required true
+ * @group Commander
+ */
+PARAM_DEFINE_INT32(COM_POS_FS_PROB, 30);
+
+/**
+ * Loss of position probation gain factor.
+ *
+ * This sets the rate that the loss of position probation time grows when position checks are failing.
+ * The default value has been optimised for rotary wing applications. For fixed wing applications a value of 0 should be used.
+ *
+ * @reboot_required true
+ * @group Commander
+ */
+PARAM_DEFINE_INT32(COM_POS_FS_GAIN, 10);
+
+/**
+ * Next flight UUID
+ *
+ * This number is incremented automatically after every flight on
+ * disarming in order to remember the next flight UUID.
+ * The first flight is 0.
+ *
+ * @group Commander
+ * @min 0
+ */
+PARAM_DEFINE_INT32(COM_FLIGHT_UUID, 0);

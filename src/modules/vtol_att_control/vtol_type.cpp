@@ -40,10 +40,11 @@
 */
 
 #include "vtol_type.h"
-#include "drivers/drv_pwm_output.h"
-#include <px4_defines.h>
-#include <float.h>
 #include "vtol_att_control_main.h"
+
+#include <cfloat>
+#include <px4_defines.h>
+#include <matrix/math.hpp>
 
 VtolType::VtolType(VtolAttitudeControl *att_controller) :
 	_attc(att_controller),
@@ -63,8 +64,8 @@ VtolType::VtolType(VtolAttitudeControl *att_controller) :
 	_actuators_out_1 = _attc->get_actuators_out1();
 	_actuators_mc_in = _attc->get_actuators_mc_in();
 	_actuators_fw_in = _attc->get_actuators_fw_in();
-	_armed = _attc->get_armed();
 	_local_pos = _attc->get_local_pos();
+	_local_pos_sp = _attc->get_local_pos_sp();
 	_airspeed = _attc->get_airspeed();
 	_batt_status = _attc->get_batt_status();
 	_tecs_status = _attc->get_tecs_status();
@@ -152,6 +153,24 @@ void VtolType::update_mc_state()
 	_mc_roll_weight = 1.0f;
 	_mc_pitch_weight = 1.0f;
 	_mc_yaw_weight = 1.0f;
+
+	// VTOL weathervane
+	_v_att_sp->disable_mc_yaw_control = false;
+
+	if (_attc->get_pos_sp_triplet()->current.valid &&
+	    !_v_control_mode->flag_control_manual_enabled) {
+
+		if (_params->wv_takeoff && _attc->get_pos_sp_triplet()->current.type == position_setpoint_s::SETPOINT_TYPE_TAKEOFF) {
+			_v_att_sp->disable_mc_yaw_control = true;
+
+		} else if (_params->wv_loiter
+			   && _attc->get_pos_sp_triplet()->current.type == position_setpoint_s::SETPOINT_TYPE_LOITER) {
+			_v_att_sp->disable_mc_yaw_control = true;
+
+		} else if (_params->wv_land && _attc->get_pos_sp_triplet()->current.type == position_setpoint_s::SETPOINT_TYPE_LAND) {
+			_v_att_sp->disable_mc_yaw_control = true;
+		}
+	}
 }
 
 void VtolType::update_fw_state()
@@ -189,17 +208,59 @@ void VtolType::update_transition_state()
 
 bool VtolType::can_transition_on_ground()
 {
-	return !_armed->armed || _land_detected->landed;
+	return !_v_control_mode->flag_armed || _land_detected->landed;
 }
 
 void VtolType::check_quadchute_condition()
 {
-	// fixed-wing minimum altitude, armed, !landed
-	if (_params->fw_min_alt > FLT_EPSILON
-	    && _armed->armed && !_land_detected->landed) {
 
-		if (-(_local_pos->z) < _params->fw_min_alt) {
-			_attc->abort_front_transition("Minimum altitude");
+	if (_v_control_mode->flag_armed && !_land_detected->landed) {
+		matrix::Eulerf euler = matrix::Quatf(_v_att->q);
+
+		// fixed-wing minimum altitude
+		if (_params->fw_min_alt > FLT_EPSILON) {
+
+			if (-(_local_pos->z) < _params->fw_min_alt) {
+				_attc->abort_front_transition("QuadChute: Minimum altitude breached");
+			}
+		}
+
+		// adaptive quadchute
+		// We use tecs for tracking in FW and local_pos_sp during transitions
+		if (_params->fw_alt_err > FLT_EPSILON && _v_control_mode->flag_control_altitude_enabled) {
+			float altErr = 0.0f;
+
+			if (_tecs_running) {
+				altErr = _tecs_status->altitudeSp - _tecs_status->altitude_filtered;
+
+			} else {
+				altErr = -_local_pos_sp->z - -_local_pos->z;
+
+				if (!_local_pos->z_valid) {
+					altErr = 0.0f;
+				}
+			}
+
+			if (altErr > _params->fw_alt_err) {
+				_attc->abort_front_transition("QuadChute: Altitude error too large");
+			}
+		}
+
+		// fixed-wing maximum pitch angle
+		if (_params->fw_qc_max_pitch > 0) {
+
+			if (fabsf(euler.theta()) > fabsf(math::radians(_params->fw_qc_max_pitch))) {
+				_attc->abort_front_transition("Maximum pitch angle exceeded");
+			}
+		}
+
+		// fixed-wing maximum roll angle
+		if (_params->fw_qc_max_roll > 0) {
+
+			if (fabsf(euler.phi()) > fabsf(math::radians(_params->fw_qc_max_roll))) {
+				_attc->abort_front_transition("Maximum roll angle exceeded");
+			}
 		}
 	}
+
 }
